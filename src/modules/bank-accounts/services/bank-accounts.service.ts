@@ -8,7 +8,7 @@ import { ValidateBankAccountOwnershipService } from './validate-bank-account-own
 export class BankAccountsService {
   constructor(
     private readonly bankAccountsRepo: BankAccountsRepository,
-    private readonly ValidateBankAccountOwnershipService: ValidateBankAccountOwnershipService,
+    private readonly validateBankAccountOwnershipService: ValidateBankAccountOwnershipService,
   ) {}
 
   create(userId: string, createBankAccountDto: CreateBankAccountDto) {
@@ -25,9 +25,35 @@ export class BankAccountsService {
     });
   }
 
-  findAllByUserId(userId: string) {
-    return this.bankAccountsRepo.findMany({
+  async findAllByUserId(userId: string) {
+    const bankAccounts = await this.bankAccountsRepo.findMany({
       where: { userId },
+      include: {
+        transactions: {
+          select: {
+            type: true,
+            value: true,
+          },
+        },
+      },
+    });
+
+    return bankAccounts.map(({ transactions, ...bankAccount }) => {
+      const totalTransactions = transactions.reduce(
+        (acc, transaction) =>
+          acc +
+          (transaction.type === 'INCOME'
+            ? transaction.value
+            : -transaction.value),
+        0,
+      );
+
+      const currentBalance = bankAccount.initialBalance + totalTransactions;
+
+      return {
+        ...bankAccount,
+        currentBalance,
+      };
     });
   }
 
@@ -36,7 +62,7 @@ export class BankAccountsService {
     bankAccountId: string,
     updateBankAccountDto: UpdateBankAccountDto,
   ) {
-    await this.ValidateBankAccountOwnershipService.validate(
+    await this.validateBankAccountOwnershipService.validate(
       userId,
       bankAccountId,
     );
@@ -56,7 +82,7 @@ export class BankAccountsService {
   }
 
   async remove(userId: string, bankAccountId: string) {
-    await this.ValidateBankAccountOwnershipService.validate(
+    await this.validateBankAccountOwnershipService.validate(
       userId,
       bankAccountId,
     );
